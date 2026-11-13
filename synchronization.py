@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 
 
 
-filepath1_acc = r"./data/test_measurement/S01_acc.csv"
+filepath1_acc = r"./data/test_measurement/S02_acc.csv"
 metadata_filepath = r"./data/test_measurement/P01_S01_20261110.csv"
 
 df_sensor1_acc = pd.read_csv(filepath1_acc)
@@ -37,4 +37,15 @@ plt.xlabel("Sekunden seit Sensorstart")
 plt.ylabel("Beschleunigungsbetrag")
 plt.legend()
 plt.show()
+
+# was hier noch fehlt: Ausschlag berechnen, zeeitlichen Unterschied bestimmen 
+# eigentlichen Ausschlag und zeitlichen Ausschlag neutralisieren
+
+
+
+# für  synchronization zwischen sensoren: für jeden Sensor
+# auschlag finden die epoche davon und dann diese epoche auf 0 setzen indem:
+# wir einfach das df cutten?
+# dann um zu überprüfen ob es korrekt ist einmal das intervall zwischen
+# diesem Startwert und dem Squat anfang berechnen und unter den Sensoren vergleichen
 
