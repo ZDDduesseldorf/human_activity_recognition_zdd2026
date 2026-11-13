@@ -1,3 +1,4 @@
+"""Plot accelerometer and gyroscope data from imported file."""
 import matplotlib.pyplot as plt
 import pandas as pd
 import matplotlib.dates as mdates
@@ -5,6 +6,7 @@ import importer
 
 
 def plot_data(df):
+    """Plot accelerometer and gyroscope data over time."""
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(18, 8))
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     ax1.plot(df['timestamp'], df['acc_x'], label='acc_x', linewidth=0.5)
@@ -30,10 +32,14 @@ def plot_data(df):
     
 
 
-
+def main() -> None:
+    """Load the example file and plot the first 10000 samples."""
+    df = importer.converter("data/6033722_0000000000.csv", "ax6")
+    if df is None:
+        return 
+    df=df.head(10000)
+    plot_data(df)
 
 
 if __name__ == "__main__":
-    df = importer.converter("data/6033722_0000000000.csv", "ax6")
-    df=df.head(10000)
-    plot_data(df)
+    main()
