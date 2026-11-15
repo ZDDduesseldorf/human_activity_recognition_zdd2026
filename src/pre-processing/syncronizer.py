@@ -17,7 +17,7 @@ def detect_flip(
     lie_samples=250,
     time_col="epoch",
     min_distance=300,
-    n_flips=4,
+    n_flips=2,
     return_debug=False,
 ):
     df = df.reset_index(drop=True)
@@ -34,8 +34,9 @@ def detect_flip(
     )
 
     # 2. Stufen-Kernel [1, ..., 1, -1, ..., -1] über die Sequenz schieben
+    # Ohne abs(): nur Wechsel von +1 (z positiv) auf -1 (z negativ) ergeben positive Scores
     kernel = np.concatenate([np.ones(lie_samples), -np.ones(lie_samples)])
-    scores = np.abs(np.correlate(seq, kernel, mode="same"))
+    scores = np.correlate(seq, kernel, mode="same")
 
     # 3. Die n_flips höchsten Peaks mit Mindestabstand finden
     masked_scores = scores.copy()
@@ -69,7 +70,7 @@ def compare(dfr, dff):
     return real_duration(dfr), fake_duration(dff)
 
 
-def plot_flips(df_acc, df_labels, window=50, lie_samples=250, min_distance=300, n_flips=4):
+def plot_flips(df_acc, df_labels, window=50, lie_samples=250, min_distance=300, n_flips=2):
     df_acc = df_acc.reset_index(drop=True)
     t_start = df_acc["epoch"].iloc[0]
     t_s = (df_acc["epoch"] - t_start) / 1000.0
@@ -140,4 +141,3 @@ if __name__ == "__main__":
     temp_r = pd.read_csv(r"C:\Users\rafae\Downloads\S03_20261113_134625.csv")
     temp_f = pd.read_csv(r"C:\Users\rafae\Downloads\20261113_02_03_SENSOR02_left_hand_acc.csv")
     print("Vergleich (real, fake):", compare(temp_r, temp_f))
-    plot_flips(temp_f, temp_r)
