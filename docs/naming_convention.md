@@ -62,13 +62,19 @@ If the list of activities changes, this table is updated via pull request.
 
 ## 3. Sensor file names
 
+Raw sensor exports (before splitting into trials) use the shorter session format:
+
+`YYYYMMDD_Pxx_Sxx_<position>_<channel>.<ext>` (`Sxx` = session number, e.g. `S01`)
+
+Processed files (split per trial) use:
+
 `<trial ID>_<device>-<position>_<channel>_<stage>.<ext>`
 
 | Field | Allowed values |
 |---|---|
 | `device` | `ax6`, `mbient` (add new devices via pull request) |
-| `position` | `wrist-left`, `wrist-right`, `ankle-left`, `ankle-right`, `hip` (add new positions via pull request) |
-| `channel` | `acc` (accelerometer only), `gyr` (gyroscope only), `imu` (accelerometer and gyroscope in one file) |
+| `position` | `left_wrist`, `right_wrist`, `left_ankle`, `right_ankle`, `hip` (add new positions via pull request) |
+| `channel` | `acc` (accelerometer only), `gyro` (gyroscope only), `imu` (accelerometer and gyroscope in one file) |
 | `stage` | `raw` (unmodified device export), `proc` (standard format) |
 
 The position is always the physical position (left/right). If the protocol
@@ -76,14 +82,14 @@ says "dominant wrist", the side that was used is recorded in the central log
 (section 5).
 
 If several units of the same device sit at the same position, add a number
-after the position: `wrist-left2`.
+after the position: `left_wrist2`.
 
 Examples:
 
-- `20261117_P03_HAR-walking_T01_mbient-ankle-left_imu_raw.csv`
-- `20261117_P03_HAR-walking_T01_ax6-ankle-right_imu_raw.csv`
-- `20261117_P03_HAR-walking_T01_mbient-ankle-left_acc_raw.csv`
-- `20261117_P03_HAR-walking_T01_mbient-ankle-left_imu_proc.csv`
+- `20261117_P03_S01_left_ankle_gyro.csv`
+- `20261117_P03_S01_right_ankle_imu.csv`
+- `20261117_P03_S01_left_ankle_acc.csv`
+- `20261117_P03_HAR-walking_T01_mbient-left_ankle_imu_proc.csv`
 
 ## 4. Annotation files
 
@@ -107,7 +113,7 @@ sensor position, validity status, duration and file name.
 - The file name column uses the names defined in this document.
 - The original device file name (as exported) is noted in the log.
 - A trial counts as recorded once its files have rows in the log.
-- A CSV copy of the log is kept in `data/metadata/` so that it is versioned
+- A CSV copy of the log is kept in `metadata/` on the shared drive.
   together with the data.
 
 The dataset coverage tracking sheet currently serves as this log. Its columns
@@ -118,7 +124,7 @@ should follow the list above.
 Devices and recording tools name their exports in their own way. These names
 are not part of the convention. After exporting:
 
-- Copy each file into `data/raw/` and rename it according to section 3.
+- Copy each file into `raw/` on the shared drive and rename it according to section 3.
 - Do not change the content of raw files, only the name.
 - Note the original file name in the central log.
 - Use the participant pseudonym, activity code and position codes from this
@@ -128,9 +134,10 @@ are not part of the convention. After exporting:
 ## 7. Rules
 
 - Lowercase for activity, device, position, channel and stage; uppercase `P`,
-  `T` and `TYPE`.
+  `S`, `T` and `TYPE`.
 - Only letters, digits, underscores and hyphens. No spaces, no umlauts.
-- Underscore separates fields; hyphen separates words inside a field.
+- Underscore separates fields (and words in position names like `left_ankle`);
+  hyphen separates words inside activity names.
 - Numbers are zero-padded (`P03`, not `P3`).
 - Never reuse an ID. A repeated trial gets a new trial number, and the invalid
   one is marked in the log (validity status) instead of being deleted.
@@ -141,13 +148,13 @@ One walking trial of participant 3 with a sensor on each ankle, annotated and
 processed:
 
 ```text
-data/
+shared_drive/
 ├── raw/
-│   ├── 20261117_P03_HAR-walking_T01_mbient-ankle-left_imu_raw.csv
-│   └── 20261117_P03_HAR-walking_T01_ax6-ankle-right_imu_raw.csv
+│   ├── 20261117_P03_S01_left_ankle_imu.csv
+│   └── 20261117_P03_S01_right_ankle_gyro.csv
 ├── processed/
-│   ├── 20261117_P03_HAR-walking_T01_mbient-ankle-left_imu_proc.csv
-│   └── 20261117_P03_HAR-walking_T01_ax6-ankle-right_imu_proc.csv
+│   ├── 20261117_P03_HAR-walking_T01_mbient-left_ankle_imu_proc.csv
+│   └── 20261117_P03_HAR-walking_T01_ax6-right_ankle_imu_proc.csv
 ├── annotations/
 │   └── 20261117_P03_HAR-walking_T01_labels.csv
 └── metadata/
