@@ -1,4 +1,19 @@
+# Data (Dataset is not in Github)
+data/
+*.parquet
+*.h5
+*.hdf5
+*.zip
+*.tar.gz
 
-# Raw data is not tracked in Git
-data/raw/*
-!data/raw/README.md
+# Python / Jupyter
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+venv/
+.venv/
+.env
+
+# OS
+.DS_Store
+Thumbs.db
