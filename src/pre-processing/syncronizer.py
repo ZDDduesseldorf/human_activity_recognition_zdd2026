@@ -15,13 +15,13 @@ def detect_flip(
     df,
     window=50,
     lie_samples=250,
-    time_col="epoch",
+    time_col="epoch_ms",
     min_distance=300,
     n_flips=2,
     return_debug=False,
 ):
     df = df.reset_index(drop=True)
-    z = df["z"]
+    z = df["acc_z_g"]
 
     # 1. Fenster über z -> Sequenz aus 1 (liegt +1g), -1 (liegt -1g), 0 (Bewegung/sonst)
     roll_mean = z.rolling(window, center=True).mean()
@@ -72,34 +72,30 @@ def compare(dfr, dff):
 
 def plot_flips(df_acc, df_labels, window=50, lie_samples=250, min_distance=300, n_flips=2):
     df_acc = df_acc.reset_index(drop=True)
-    t_start = df_acc["epoch"].iloc[0]
-    t_s = (df_acc["epoch"] - t_start) / 1000.0
+    t_start = df_acc["epoch_ms"].iloc[0]
+    t_s = (df_acc["epoch_ms"] - t_start) / 1000.0
 
     events, seq, scores, peak_indices = detect_flip(
         df_acc,
         window=window,
         lie_samples=lie_samples,
-        time_col="epoch",
+        time_col="epoch_ms",
         min_distance=min_distance,
         n_flips=n_flips,
         return_debug=True,
     )
 
-    # Gespeicherte sync_flip-Labels über start_time / end_time in Sekunden seit Sensorstart umrechnen
+    # Gespeicherte sync_flip-Labels über start_time in Sekunden seit Sensorstart umrechnen
     flips_label = df_labels[df_labels["label"] == "sync_flip"].copy()
     start_epochs = pd.Series(
         [t.timestamp() * 1000 for t in pd.to_datetime(flips_label["start_time"]).dt.tz_localize("Europe/Berlin")]
     )
-    end_epochs = pd.Series(
-        [t.timestamp() * 1000 for t in pd.to_datetime(flips_label["end_time"]).dt.tz_localize("Europe/Berlin")]
-    )
     label_starts_s = (start_epochs - t_start) / 1000.0
-    label_ends_s = (end_epochs - t_start) / 1000.0
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
 
     # Plot 1: z-Achse + erkannte Flips + gespeicherte Labels
-    ax1.plot(t_s, df_acc["z"], label="z (g)", color="steelblue", linewidth=0.8)
+    ax1.plot(t_s, df_acc["acc_z_g"], label="z (g)", color="steelblue", linewidth=0.8)
     for i, idx in enumerate(peak_indices):
         ax1.axvline(
             t_s.iloc[idx],
@@ -108,12 +104,13 @@ def plot_flips(df_acc, df_labels, window=50, lie_samples=250, min_distance=300, 
             linewidth=1.5,
             label="Erkannter Flip" if i == 0 else None,
         )
-    for i, (ls, le) in enumerate(zip(label_starts_s, label_ends_s)):
-        ax1.axvspan(
+    for i, ls in enumerate(label_starts_s):
+        ax1.axvline(
             ls,
-            le,
             color="green",
-            alpha=0.25,
+            linestyle="-",
+            linewidth=1.5,
+            alpha=0.8,
             label="Gespeicherter sync_flip (Labels)" if i == 0 else None,
         )
     ax1.set_ylabel("z-Beschleunigung [g]")
@@ -138,6 +135,7 @@ def plot_flips(df_acc, df_labels, window=50, lie_samples=250, min_distance=300, 
 
 
 if __name__ == "__main__":
-    temp_r = pd.read_csv(r"C:\Users\rafae\Downloads\S03_20261113_134625.csv")
-    temp_f = pd.read_csv(r"C:\Users\rafae\Downloads\20261113_02_03_SENSOR02_left_hand_acc.csv")
+    temp_r = pd.read_csv(r"data\20261117_P03_S03_SC01\20261117_P03_S03_SC01_labels.csv")
+    temp_f = pd.read_csv(r"data\20261117_P03_S03_SC01\20261117_P03_S03_SC01_left_wrist_acc.csv")
+    plot_flips(temp_f, temp_r)
     print("Vergleich (real, fake):", compare(temp_r, temp_f))
