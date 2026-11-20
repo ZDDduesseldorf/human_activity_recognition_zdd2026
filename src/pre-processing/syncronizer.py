@@ -1,7 +1,15 @@
+from pathlib import Path
+import warnings
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import importer
+
+
+DEFAULT_JOINTS = ("left_wrist", "right_wrist", "torso", "right_thigh")
+ACC_COLS = ("acc_x_g", "acc_y_g", "acc_z_g")
+GYRO_COLS = ("gyro_x_dps", "gyro_y_dps", "gyro_z_dps")
 
 
 def real_duration(df):
@@ -134,8 +142,143 @@ def plot_flips(df_acc, df_labels, window=50, lie_samples=250, min_distance=300, 
     plt.show()
 
 
+def _align_and_interpolate(
+    df: pd.DataFrame,
+    sensor_t1: float,
+    sensor_t2: float,
+    duration_s: float,
+    target_t: np.ndarray,
+    value_cols: tuple[str, ...],
+    time_col: str = "epoch_ms",
+    max_gap_s: float = 0.25,
+) -> dict[str, np.ndarray]:
+    """Mappt Sensor-Zeitstempel linear auf [0, duration_s] und interpoliert auf target_t."""
+    clean = df[[time_col, *value_cols]].dropna(subset=[time_col]).sort_values(time_col)
+    clean = clean.drop_duplicates(subset=time_col)
+
+    t_sensor = clean[time_col].to_numpy(dtype=float)
+    t_aligned = (t_sensor - sensor_t1) / (sensor_t2 - sensor_t1) * duration_s
+
+    # Lücken größer als max_gap_s im Zielraster maskieren (keine Interpolation über Aussetzer)
+    gap_mask = np.zeros(len(target_t), dtype=bool)
+    if max_gap_s is not None and len(t_aligned) > 1:
+        gap_starts = np.where(np.diff(t_aligned) > max_gap_s)[0]
+        for idx in gap_starts:
+            gap_mask |= (target_t > t_aligned[idx]) & (target_t < t_aligned[idx + 1])
+
+    out: dict[str, np.ndarray] = {}
+    for col in value_cols:
+        vals = np.interp(target_t, t_aligned, clean[col].to_numpy(dtype=float), left=np.nan, right=np.nan)
+        vals[gap_mask] = np.nan
+        out[col] = vals
+    return out
+
+
+def synchronize_trial(
+    joints: dict[str, tuple[pd.DataFrame | None, pd.DataFrame | None]],
+    df_labels: pd.DataFrame,
+    target_hz: float = 50.0,
+    max_duration_diff_s: float = 5.0,
+    max_gap_s: float = 0.25,
+    time_col: str = "epoch_ms",
+    acc_cols: tuple[str, ...] = ACC_COLS,
+    gyro_cols: tuple[str, ...] = GYRO_COLS,
+) -> pd.DataFrame:
+    """Synchronisiert alle Gelenke (Acc + Gyro) zwischen den beiden sync_flips auf ein gemeinsames Zeitraster.
+
+    - Startet bei time_s = 0.0 s (erster sync_flip) bis zur echten Dauer zwischen erstem und letztem sync_flip.
+    - Pro Gelenk werden die Flips auf Acc erkannt und für Acc & Gyro dieses Gelenks verwendet.
+    - Bei fehlenden/abgebrochenen Sensoren oder zu großer Dauer-Abweichung wird eine Warnung ausgegeben
+      und die Spalten des Gelenks werden mit NaN gefüllt, damit das Spalten-Schema konstant bleibt.
+    """
+    flips_label = df_labels[df_labels["label"] == "sync_flip"]
+    if len(flips_label) < 2:
+        raise ValueError("df_labels muss mindestens zwei 'sync_flip'-Einträge enthalten.")
+
+    duration_s = float(flips_label.iloc[-1]["start_s"]) - float(flips_label.iloc[0]["start_s"])
+    if duration_s <= 0:
+        raise ValueError(f"Ungültige Label-Dauer zwischen den sync_flips: {duration_s}s")
+
+    n_samples = int(np.floor(duration_s * target_hz)) + 1
+    target_t = np.arange(n_samples, dtype=float) / target_hz
+
+    result: dict[str, np.ndarray] = {"time_s": target_t}
+    nan_col = lambda: np.full(len(target_t), np.nan, dtype=float)
+
+    for joint_name, (df_acc, df_gyro) in joints.items():
+        if df_acc is None or df_acc.empty:
+            warnings.warn(f"[{joint_name}] Keine Acc-Daten vorhanden. Spalten werden mit NaN gefüllt.")
+            for col in (*acc_cols, *gyro_cols):
+                result[f"{joint_name}_{col}"] = nan_col()
+            continue
+
+        events = detect_flip(df_acc, time_col=time_col)
+        if len(events) < 2:
+            warnings.warn(
+                f"[{joint_name}] Weniger als 2 sync_flips erkannt ({len(events)}). Spalten werden mit NaN gefüllt."
+            )
+            for col in (*acc_cols, *gyro_cols):
+                result[f"{joint_name}_{col}"] = nan_col()
+            continue
+
+        sensor_t1, sensor_t2 = events[0], events[-1]
+        sensor_dur_s = (sensor_t2 - sensor_t1) / 1000.0
+        dur_diff = abs(sensor_dur_s - duration_s)
+
+        if dur_diff > max_duration_diff_s:
+            warnings.warn(
+                f"[{joint_name}] Dauer-Abweichung zu groß: Sensor={sensor_dur_s:.3f}s vs. "
+                f"Labels={duration_s:.3f}s (Diff={dur_diff:.3f}s > {max_duration_diff_s}s). "
+                f"Spalten werden mit NaN gefüllt."
+            )
+            for col in (*acc_cols, *gyro_cols):
+                result[f"{joint_name}_{col}"] = nan_col()
+            continue
+
+        acc_interp = _align_and_interpolate(
+            df_acc, sensor_t1, sensor_t2, duration_s, target_t, acc_cols, time_col=time_col, max_gap_s=max_gap_s
+        )
+        for col, vals in acc_interp.items():
+            result[f"{joint_name}_{col}"] = vals
+
+        if df_gyro is None or df_gyro.empty:
+            warnings.warn(f"[{joint_name}] Keine Gyro-Daten vorhanden. Gyro-Spalten werden mit NaN gefüllt.")
+            for col in gyro_cols:
+                result[f"{joint_name}_{col}"] = nan_col()
+        else:
+            gyro_interp = _align_and_interpolate(
+                df_gyro, sensor_t1, sensor_t2, duration_s, target_t, gyro_cols, time_col=time_col, max_gap_s=max_gap_s
+            )
+            for col, vals in gyro_interp.items():
+                result[f"{joint_name}_{col}"] = vals
+
+    return pd.DataFrame(result)
+
+
+def load_trial(
+    trial_dir: str | Path,
+    joint_names: tuple[str, ...] = DEFAULT_JOINTS,
+) -> tuple[dict[str, tuple[pd.DataFrame | None, pd.DataFrame | None]], pd.DataFrame]:
+    """Lädt Labels sowie Acc/Gyro-CSVs aller Gelenke aus einem Trial-Ordner."""
+    trial_path = Path(trial_dir)
+    trial_id = trial_path.name
+    df_labels = pd.read_csv(trial_path / f"{trial_id}_labels.csv")
+
+    joints: dict[str, tuple[pd.DataFrame | None, pd.DataFrame | None]] = {}
+    for joint in joint_names:
+        acc_path = trial_path / f"{trial_id}_{joint}_acc.csv"
+        gyro_path = trial_path / f"{trial_id}_{joint}_gyro.csv"
+        df_acc = pd.read_csv(acc_path) if acc_path.exists() else None
+        df_gyro = pd.read_csv(gyro_path) if gyro_path.exists() else None
+        joints[joint] = (df_acc, df_gyro)
+
+    return joints, df_labels
+
+
 if __name__ == "__main__":
-    temp_r = pd.read_csv(r"data\20261117_P03_S03_SC01\20261117_P03_S03_SC01_labels.csv")
-    temp_f = pd.read_csv(r"data\20261117_P03_S03_SC01\20261117_P03_S03_SC01_left_wrist_acc.csv")
-    plot_flips(temp_f, temp_r)
-    print("Vergleich (real, fake):", compare(temp_r, temp_f))
+    joints, df_labels = load_trial(r"data\20261117_P03_S03_SC01")
+    df_synced = synchronize_trial(joints, df_labels, target_hz=50.0)
+    print("Synchronisiertes DataFrame:", df_synced.shape)
+    print(df_synced.head())
+    print("\nNaN-Anteil pro Spalte:")
+    print(df_synced.isna().mean().round(4))
