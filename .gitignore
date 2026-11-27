@@ -1,4 +1,2 @@
-
-# Raw data is not tracked in Git
-data/raw/*
-!data/raw/README.md
+__pycache__/
+data/
